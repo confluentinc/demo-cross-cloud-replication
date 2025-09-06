@@ -12,14 +12,19 @@ confluent login
 #STEP2: On the destination (azure) bastion host run this to use set the context of the CLI
 confluent environment use  ${confluent_environment.destenv.id}
 
-#STEP3: On the destination (azure) bastion host run this to create a cluster link
+#STEP3: On the destination (azure) bastion host run this to create a config file for the cluster linking 
+
+echo auto.create.mirror.topics.enable=true > link-config.properties
+echo consumer.offset.sync.enable=true >> link-config.properties
+echo auto.create.mirror.topics.filters={"topicFilters": [{"name": "*", "patternType": "LITERAL", "filterType": "INCLUDE"}]} >> link-config.properties
+
 confluent kafka link create cross-cloud-link ^
   --cluster ${confluent_kafka_cluster.destcluster.id} ^
   --source-cluster ${confluent_kafka_cluster.sourcecluster.id} ^
   --source-bootstrap-server ${confluent_kafka_cluster.sourcecluster.bootstrap_endpoint} ^
   --source-api-key ${confluent_api_key.app-manager-kafka-api-key.id} ^
   --source-api-secret ${confluent_api_key.app-manager-kafka-api-key.secret} ^
-  --config auto.create.mirror.topics.enable=true,consumer.offset.sync.enable=true
+  --config link-config.properties
 
 #[OPTIONAL] STEP4: This is optional if you did not enable auto.create.mirror.topics. On the destination (azure) bastion host run this to create a cluster link
 confluent kafka mirror create sample_data_orders --link cross-cloud-link --cluster ${confluent_kafka_cluster.destcluster.id}

@@ -9,7 +9,7 @@ resource "random_id" "env_display_id" {
 # ------------------------------------------------------
 
 resource "confluent_environment" "sourceenv" {
-  display_name = "source-environment-${random_id.env_display_id.hex}"
+  display_name = "PRIVATE-SOURCE-AWS"
   stream_governance {
     package = "ADVANCED"
   }
@@ -29,7 +29,7 @@ data "confluent_schema_registry_cluster" "sourcesr" {
 # ------------------------------------------------------
 
 resource "confluent_kafka_cluster" "sourcecluster" {
-  display_name = "source-cluster"
+  display_name = "PRIVATE-SOURCE-AWS"
   availability = "MULTI_ZONE"
   cloud        = "AWS"
   region       = var.aws_region

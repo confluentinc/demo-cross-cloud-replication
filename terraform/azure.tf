@@ -124,14 +124,14 @@ resource "azurerm_private_dns_zone" "hz" {
 }
 
 resource "azurerm_private_endpoint" "endpoint" {
-  name                = "confluent-${local.network_id}-1"
+  name                = "confluent-${local.network_id}-${random_id.env_display_id.hex}"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 
   subnet_id = azurerm_subnet.private.id
 
   private_service_connection {
-    name                              = "confluent-${local.network_id}-1"
+    name                              = "confluent-${local.network_id}-${random_id.env_display_id.hex}"
     is_manual_connection              = true
     private_connection_resource_alias = confluent_private_link_attachment.destpla.azure[0].private_link_service_alias
     request_message                   = "PL"

@@ -105,7 +105,7 @@ locals {
 # ------------------------------------------------------
 
 resource "confluent_environment" "destenv" {
-  display_name = "destination-environment-${random_id.env_display_id.hex}"
+  display_name = "PRIVATE-DESTINATION-AZURE"
   stream_governance {
     package = "ADVANCED"
   }
@@ -125,7 +125,7 @@ data "confluent_schema_registry_cluster" "destsr" {
 # ------------------------------------------------------
 
 resource "confluent_kafka_cluster" "destcluster" {
-  display_name = "destination-cluster"
+  display_name = "PRIVATE-DESTINATION-AZURE"
   availability = "MULTI_ZONE"
   cloud        = "AZURE"
   region       = local.azure_confluent_region
