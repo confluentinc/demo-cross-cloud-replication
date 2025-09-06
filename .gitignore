@@ -38,6 +38,7 @@
 **/.terraform.lock.hcl
 **/config.txt
 **/replication_commands.txt
+**/sshkey-cl-key-*
 
 
 # Logs and databases
