@@ -6,12 +6,15 @@ This repository demonstrates how to set up cross-cloud replication between AWS a
 
 ![Architecture Diagram](./assets/1-HLD.png)
 
-Both the **source** and **destination** clusters are private. To access them, you need to log in to the corresponding **bastion hosts**.  
+This demo uses a **destination-initiated Cluster Link**, which means it must be configured on the **destination cluster**.
 
-The Cluster Linking between the clusters will be a **destination-initiated link**, so it should be configured on the **destination cluster**.  
+Both the **source** and **destination** clusters are **private**, so data replication happens **within the cloud provider’s network** and does **not traverse the public internet**.
 
-With this setup, data is replicated **without traversing the public internet**, keeping traffic within the cloud provider networks. You will access both clusters from your local machine via NGINX proxies deployed in each cloud. After deploying infrastructure, update your local hosts file so the Confluent endpoints resolve to the proxies, then run all commands locally (macOS or Windows).
+Because the clusters are private, you’ll connect from your local machine through **NGINX proxies** deployed in each cloud.
 
+After deploying the infrastructure:
+1. **Update your local hosts file** so the Confluent endpoints resolve to the NGINX proxies.  
+2. **Run all commands locally** from macOS or Windows.
 
 ## 🎯 Essential Setup (Complete First!)
 
