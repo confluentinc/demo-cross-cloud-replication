@@ -35,12 +35,7 @@ resource "azurerm_subnet" "private" {
 }
 
 # Public IP for VM
-resource "azurerm_public_ip" "vm_public_ip" {
-  name                = "${var.prefix}-vm-public-ip"
-  resource_group_name = azurerm_resource_group.rg.name
-  location            = azurerm_resource_group.rg.location
-  allocation_method   = "Static"
-}
+ 
 
 # Network Security Group for Public Subnet
 resource "azurerm_network_security_group" "public_nsg" {
@@ -156,33 +151,112 @@ resource "azurerm_private_dns_a_record" "rr" {
 }
 
 # Network Interface for VM (place this after your public IP resource)
-resource "azurerm_network_interface" "vm_nic" {
-  name                = "${var.prefix}-vm-nic"
+ 
+
+# Associate Network Security Group to the network interface
+ 
+
+ 
+
+ 
+
+#
+# NGINX Proxy (Linux) to mirror AWS setup
+#
+
+resource "azurerm_public_ip" "nginx_public_ip" {
+  name                = "${var.prefix}-nginx-public-ip"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+  allocation_method   = "Static"
+  sku                 = "Standard"
+}
+
+resource "azurerm_network_security_group" "nginx_nsg" {
+  name                = "${var.prefix}-nginx-nsg"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  security_rule {
+    name                       = "SSH"
+    priority                   = 1101
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "22"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "HTTP"
+    priority                   = 1102
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "80"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "HTTPS"
+    priority                   = 1103
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "KAFKA"
+    priority                   = 1104
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "9092"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+}
+
+resource "azurerm_network_interface" "nginx_nic" {
+  name                = "${var.prefix}-nginx-nic"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 
   ip_configuration {
     name                          = "internal"
-    subnet_id                     = azurerm_subnet.public.id  # This places the VM in the public subnet
+    subnet_id                     = azurerm_subnet.public.id
     private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.vm_public_ip.id
+    public_ip_address_id          = azurerm_public_ip.nginx_public_ip.id
   }
 }
 
-# Associate Network Security Group to the network interface
-resource "azurerm_network_interface_security_group_association" "vm_nsg_association" {
-  network_interface_id      = azurerm_network_interface.vm_nic.id
-  network_security_group_id = azurerm_network_security_group.public_nsg.id
+resource "azurerm_network_interface_security_group_association" "nginx_nic_nsg" {
+  network_interface_id      = azurerm_network_interface.nginx_nic.id
+  network_security_group_id = azurerm_network_security_group.nginx_nsg.id
 }
 
-resource "azurerm_windows_virtual_machine" "vm" {
-  name                = "${var.prefix}-vm"
-  resource_group_name = azurerm_resource_group.rg.name
-  location            = azurerm_resource_group.rg.location
-  size                = "Standard_B2ms"
-  admin_username      = "adminuser"
-  admin_password      = "YourSecurePassword123!"
-  network_interface_ids = [azurerm_network_interface.vm_nic.id]
+resource "azurerm_linux_virtual_machine" "nginx_proxy" {
+  name                            = "${var.prefix}-nginx-proxy"
+  resource_group_name             = azurerm_resource_group.rg.name
+  location                        = azurerm_resource_group.rg.location
+  size                            = "Standard_B2ms"
+  admin_username                  = "azureuser"
+  disable_password_authentication = true
+  network_interface_ids           = [azurerm_network_interface.nginx_nic.id]
+
+  admin_ssh_key {
+    username   = "azureuser"
+    public_key = tls_private_key.rsa-4096-example.public_key_openssh
+  }
 
   os_disk {
     caching              = "ReadWrite"
@@ -190,29 +264,90 @@ resource "azurerm_windows_virtual_machine" "vm" {
   }
 
   source_image_reference {
-    publisher = "MicrosoftWindowsServer"
-    offer     = "WindowsServer"
-    sku       = "2022-Datacenter"
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-jammy"
+    sku       = "22_04-lts-gen2"
     version   = "latest"
+  }
+
+  custom_data = base64encode(<<EOF
+  #cloud-config
+  package_update: true
+  packages:
+    - nginx
+    - net-tools
+  write_files:
+    - path: /etc/nginx/nginx.conf
+      permissions: '0644'
+      content: |
+        user www-data;
+        worker_processes auto;
+        pid /run/nginx.pid;
+        include /etc/nginx/modules-enabled/*.conf;
+        events {}
+        stream {
+          map $ssl_preread_server_name $targetBackend {
+             default $ssl_preread_server_name;
+          }
+          server {
+            listen 9092;
+            proxy_connect_timeout 1s;
+            proxy_timeout 7200s;
+            resolver 168.63.129.16 valid=30s ipv6=off;
+            proxy_pass $targetBackend:9092;
+            ssl_preread on;
+          }
+          server {
+            listen 443;
+            proxy_connect_timeout 1s;
+            proxy_timeout 7200s;
+            resolver 168.63.129.16 valid=30s ipv6=off;
+            proxy_pass $targetBackend:443;
+            ssl_preread on;
+          }
+          log_format stream_routing '[$time_local] remote address $remote_addr with SNI name "$ssl_preread_server_name" proxied to "$upstream_addr" $protocol $status $bytes_sent $bytes_received $session_time';
+          access_log /var/log/nginx/stream-access.log stream_routing;
+        }
+        http {
+          sendfile on;
+          tcp_nopush on;
+          types_hash_max_size 2048;
+          include /etc/nginx/mime.types;
+          default_type application/octet-stream;
+          access_log /var/log/nginx/access.log;
+          error_log /var/log/nginx/error.log;
+          server {
+            listen 80 default_server;
+            server_name _;
+            location /health {
+              access_log off;
+              return 200 "healthy\n";
+              add_header Content-Type text/plain;
+            }
+            location / { return 404; }
+          }
+        }
+  runcmd:
+    - [ bash, -lc, "nginx -t" ]
+    - [ systemctl, restart, nginx ]
+    - [ systemctl, enable, nginx ]
+EOF
+  )
+
+  tags = {
+    Name = "${var.prefix}-nginx-proxy-${random_id.env_display_id.hex}"
   }
 }
 
-resource "azurerm_virtual_machine_extension" "install_confluent" {
-  name                 = "InstallConfluentCLI"
-  virtual_machine_id   = azurerm_windows_virtual_machine.vm.id
-  publisher            = "Microsoft.Compute"
-  type                 = "CustomScriptExtension"
-  type_handler_version = "1.10"
-
-  settings = <<JSON
-{
-  "commandToExecute": "powershell -ExecutionPolicy Unrestricted -Command \"try { $installPath='C:\\\\Windows\\\\Temp\\\\ConfluentCLI'; $extractRoot='C:\\\\Windows\\\\Temp\\\\confluent-cli'; $zipPath='C:\\\\Windows\\\\Temp\\\\confluent-cli.zip'; if(Test-Path $extractRoot){Remove-Item $extractRoot -Recurse -Force}; if(Test-Path $installPath){Remove-Item $installPath -Recurse -Force}; $release=Invoke-RestMethod -Uri 'https://api.github.com/repos/confluentinc/cli/releases/latest'; $asset=$release.assets | Where-Object { $_.name -match 'windows_amd64.zip' } | Select-Object -First 1; Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath; Expand-Archive -Path $zipPath -DestinationPath $extractRoot -Force; $sourcePath=Join-Path $extractRoot 'confluent'; Move-Item -Path $sourcePath -Destination $installPath; Copy-Item -Path (Join-Path $installPath 'confluent.exe') -Destination 'C:\\\\Windows\\\\System32\\\\confluent.exe' -Force; & 'C:\\\\Windows\\\\System32\\\\confluent.exe' --version } catch { Write-Output 'Confluent CLI installation failed: '+$_.Exception.Message }\""
-}
-JSON
-}
-
-
-
+# output "update_hosts_macos_linux_azure" {
+#   description = "Mac/Linux: Copy and run this command (appends to /etc/hosts) for Azure"
+#   value       = "echo '${azurerm_public_ip.nginx_public_ip.ip_address} ${trimsuffix(replace(confluent_kafka_cluster.destcluster.rest_endpoint, "https://", ""), ":443")}' | sudo tee -a /etc/hosts"
+# }
+#
+# output "update_hosts_windows_azure" {
+#   description = "Windows: Copy and run this command in CMD as Administrator (appends to hosts file) for Azure"
+#   value       = "echo ${azurerm_public_ip.nginx_public_ip.ip_address} ${trimsuffix(replace(confluent_kafka_cluster.destcluster.rest_endpoint, "https://", ""), ":443")} >> C:\\Windows\\System32\\drivers\\etc\\hosts"
+# }
 
 
 

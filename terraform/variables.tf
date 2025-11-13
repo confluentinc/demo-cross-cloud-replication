@@ -23,7 +23,7 @@ variable "aws_region" {
 }
 
 variable "azure_region" {
-  description = "The cloud region for your infrastructure"
+  description = "Azure region name (e.g., 'East US' or 'eastus')"
   type        = string
   default     = "East US"
 }

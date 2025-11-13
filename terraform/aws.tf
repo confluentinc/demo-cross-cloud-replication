@@ -116,9 +116,8 @@ resource "aws_route_table_association" "pri_subnet_associations" {
 }
 
 # ------------------------------------------------------
-# Security Group
+# Security Group for PrivateLink Endpoint
 # ------------------------------------------------------
-
 
 resource "aws_security_group" "sg" {
   name        = "${var.prefix}-sg-${random_id.env_display_id.hex}"
@@ -151,139 +150,237 @@ resource "aws_security_group" "sg" {
   }
 }
 
-# Security Group for Windows EC2 Instance
-resource "aws_security_group" "windows_sg" {
-  name        = "${var.prefix}-windows-sg-${random_id.env_display_id.hex}"
-  description = "Allow RDP traffic"
+# ------------------------------------------------------
+# Security Group for NGINX Proxy
+# ------------------------------------------------------
+
+resource "aws_security_group" "nginx_sg" {
+  name        = "${var.prefix}-nginx-sg-${random_id.env_display_id.hex}"
+  description = "Security group for NGINX proxy server"
   vpc_id      = aws_vpc.main.id
 
+  # Allow SSH for management
   ingress {
-    from_port   = 3389
-    to_port     = 3389
+    from_port   = 22
+    to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"]  # Consider restricting this to your IP
+    description = "SSH access"
   }
 
+  # Allow HTTPS traffic from anywhere
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTPS for Kafka REST API"
+  }
+
+  # Allow Kafka broker traffic from anywhere
+  ingress {
+    from_port   = 9092
+    to_port     = 9092
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Kafka broker traffic"
+  }
+
+  # Allow all outbound traffic
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow all outbound"
   }
 
   tags = {
-    Name = "${var.prefix}-windows-sg-${random_id.env_display_id.hex}"
+    Name = "${var.prefix}-nginx-sg-${random_id.env_display_id.hex}"
   }
 }
 
 # ------------------------------------------------------
-# Windows EC2 Instance
+# Get Latest Ubuntu AMI
 # ------------------------------------------------------
 
-data "aws_ami" "windows" {
+data "aws_ami" "ubuntu" {
   most_recent = true
-  owners      = ["amazon"]
+  owners      = ["099720109477"] # Canonical - works in all AWS regions
 
   filter {
     name   = "name"
-    values = ["Windows_Server-2025-English-Full-Base-*"]
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+
+  filter {
+    name   = "state"
+    values = ["available"]
   }
 }
 
-resource "aws_instance" "windows_instance" {
-  ami                    = data.aws_ami.windows.image_id
-  instance_type          = "t3.large"
+# ------------------------------------------------------
+# NGINX Proxy EC2 Instance
+# ------------------------------------------------------
+
+resource "aws_instance" "nginx_proxy" {
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = "t3.small"
   key_name               = aws_key_pair.tf_key.key_name
-  vpc_security_group_ids = [aws_security_group.windows_sg.id]
+  vpc_security_group_ids = [aws_security_group.nginx_sg.id]
   subnet_id              = aws_subnet.public_subnets[0].id
-  get_password_data      = true
 
-  user_data_base64 = base64encode(<<-EOF
-    <powershell>
-    # Wait for the system to be fully ready
-    Start-Sleep -Seconds 60
-    Start-Transcript -Path "C:\\Windows\\Temp\\confluent-install.log" -Force
+  user_data = <<-EOF
+#!/bin/bash
+set -e
 
-    try {
-        $installPath = "C:\\Windows\\Temp\\ConfluentCLI"
-        $extractRoot = "C:\\Windows\\Temp\\confluent-cli"
-        $zipPath = "C:\\Windows\\Temp\\confluent-cli.zip"
+# Log all output
+exec > >(tee /var/log/user-data.log)
+exec 2>&1
 
-        # Cleanup old directories
-        if (Test-Path $extractRoot) { Remove-Item $extractRoot -Recurse -Force }
-        if (Test-Path $installPath) { Remove-Item $installPath -Recurse -Force }
+echo "Starting NGINX proxy setup..."
 
-        # Download latest Confluent CLI release
-        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/confluentinc/cli/releases/latest"
-        $asset = $release.assets | Where-Object { $_.name -match "windows_amd64.zip" } | Select-Object -First 1
-        if (-not $asset) { throw "Could not find windows_amd64.zip asset" }
+# Update system
+apt-get update
+apt-get upgrade -y
 
-        Write-Output "Downloading Confluent CLI from $($asset.browser_download_url)"
-        Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath
+# Install NGINX
+apt-get install -y nginx net-tools
 
-        Write-Output "Extracting to $extractRoot"
-        Expand-Archive -Path $zipPath -DestinationPath $extractRoot -Force
+# Backup original config
+cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.backup
 
-        # Move inner 'confluent' folder to install path
-        $sourcePath = Join-Path $extractRoot "confluent"
-        if (-not (Test-Path $sourcePath)) { throw "Expected 'confluent' folder not found" }
-        Move-Item -Path $sourcePath -Destination $installPath
+# Create NGINX configuration for SNI-based routing
+# Note: stream module is already loaded via /etc/nginx/modules-enabled/
+cat > /etc/nginx/nginx.conf <<'NGINXCONF'
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+include /etc/nginx/modules-enabled/*.conf;
 
-        # Move confluent.exe into C:\Windows\System32 so it's globally available
-        $exeSource = Join-Path $installPath "confluent.exe"
-        $exeTarget = "C:\\Windows\\System32\\confluent.exe"
-        if (Test-Path $exeSource) {
-            Copy-Item -Path $exeSource -Destination $exeTarget -Force
-        } else {
-            throw "confluent.exe not found at $exeSource"
+events {}
+
+stream {
+  map $ssl_preread_server_name $targetBackend {
+     default $ssl_preread_server_name;
+  }
+  
+  server {
+    listen 9092;
+    proxy_connect_timeout 1s;
+    proxy_timeout 7200s;
+    resolver 169.254.169.253;
+    proxy_pass $targetBackend:9092;
+    ssl_preread on;
+  }
+  
+  server {
+    listen 443;
+    proxy_connect_timeout 1s;
+    proxy_timeout 7200s;
+    resolver 169.254.169.253;
+    proxy_pass $targetBackend:443;
+    ssl_preread on;
+  }
+  
+  log_format stream_routing '[$time_local] remote address $remote_addr'
+                     'with SNI name "$ssl_preread_server_name" '
+                     'proxied to "$upstream_addr" '
+                     '$protocol $status $bytes_sent $bytes_received '
+                     '$session_time';
+  access_log /var/log/nginx/stream-access.log stream_routing;
+}
+
+http {
+    sendfile on;
+    tcp_nopush on;
+    types_hash_max_size 2048;
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    access_log /var/log/nginx/access.log;
+    error_log /var/log/nginx/error.log;
+
+    server {
+        listen 80 default_server;
+        server_name _;
+
+        location /health {
+            access_log off;
+            return 200 "healthy\n";
+            add_header Content-Type text/plain;
         }
 
-        # Verify installation
-        $version = & $exeTarget --version
-        Write-Output "Confluent CLI version installed: $version"
-
-    } catch {
-        Write-Output "Confluent CLI installation failed: $($_.Exception.Message)"
+        location / {
+            return 404;
+        }
     }
+}
+NGINXCONF
 
-    Stop-Transcript
-    </powershell>
-    EOF
-  )
+# Test NGINX configuration
+nginx -t
+
+# Restart NGINX to apply changes
+systemctl restart nginx
+
+# Enable NGINX to start on boot
+systemctl enable nginx
+
+# Verify NGINX is running
+systemctl status nginx
+
+echo "NGINX proxy setup completed successfully!"
+
+# Display version and status
+nginx -v
+echo "Resolver configured: 169.254.169.253"
+
+# Show listening ports
+netstat -tulpn | grep nginx
+EOF
 
   root_block_device {
-    volume_size = 30
+    volume_size = 20
+    volume_type = "gp3"
   }
 
   tags = {
-    Name = "${var.prefix}-windows-instance-${random_id.env_display_id.hex}"
+    Name = "${var.prefix}-nginx-proxy-${random_id.env_display_id.hex}"
   }
+
+  # Ensure the instance is recreated if user_data changes
+  user_data_replace_on_change = true
 }
 
+# ------------------------------------------------------
+# SSH Key Pair
+# ------------------------------------------------------
 
 resource "aws_key_pair" "tf_key" {
   key_name   = "${var.prefix}-key-${random_id.env_display_id.hex}"
   public_key = tls_private_key.rsa-4096-example.public_key_openssh
 }
 
-# RSA key of size 4096 bits
 resource "tls_private_key" "rsa-4096-example" {
   algorithm = "RSA"
   rsa_bits  = 4096
-
 }
 
 resource "local_file" "tf_key" {
-  content  = tls_private_key.rsa-4096-example.private_key_pem
-  filename = "${path.module}/sshkey-${aws_key_pair.tf_key.key_name}"
+  content         = tls_private_key.rsa-4096-example.private_key_pem
+  filename        = "${path.module}/sshkey-${aws_key_pair.tf_key.key_name}"
   file_permission = "0400"
 }
 
-
 # ------------------------------------------------------
-# VPC Endpoint
+# VPC Endpoint for PrivateLink
 # ------------------------------------------------------
-
 
 resource "aws_vpc_endpoint" "privatelink" {
   vpc_id            = aws_vpc.main.id
@@ -303,11 +400,9 @@ resource "aws_vpc_endpoint" "privatelink" {
   }
 }
 
-
-# # ------------------------------------------------------
-# VPC Endpoint
 # ------------------------------------------------------
-
+# Route53 Private Hosted Zone
+# ------------------------------------------------------
 
 resource "aws_route53_zone" "privatelink" {
   name = confluent_private_link_attachment.sourcepla.dns_domain
@@ -316,7 +411,6 @@ resource "aws_route53_zone" "privatelink" {
     vpc_id = aws_vpc.main.id
   }
 }
-
 
 resource "aws_route53_record" "privatelink" {
   zone_id = aws_route53_zone.privatelink.zone_id
@@ -327,3 +421,17 @@ resource "aws_route53_record" "privatelink" {
     aws_vpc_endpoint.privatelink.dns_entry[0]["dns_name"]
   ]
 }
+
+# ------------------------------------------------------
+# Outputs
+# ------------------------------------------------------
+
+# output "update_hosts_macos_linux" {
+#   description = "Mac/Linux: Copy and run this command (appends to /etc/hosts)"
+#   value       = "echo '${aws_instance.nginx_proxy.public_ip} ${trimsuffix(replace(confluent_kafka_cluster.sourcecluster.rest_endpoint, "https://", ""), ":443")}' | sudo tee -a /etc/hosts"
+# }
+#
+# output "update_hosts_windows" {
+#   description = "Windows: Copy and run this command in CMD as Administrator (appends to hosts file)"
+#   value       = "echo ${aws_instance.nginx_proxy.public_ip} ${trimsuffix(replace(confluent_kafka_cluster.sourcecluster.rest_endpoint, "https://", ""), ":443")} >> C:\\Windows\\System32\\drivers\\etc\\hosts"
+# }

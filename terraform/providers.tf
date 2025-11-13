@@ -24,7 +24,6 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Azure Provider Configuration
 provider "azurerm" {
   features {}
 }
