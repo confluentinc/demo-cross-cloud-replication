@@ -138,14 +138,14 @@ resource "confluent_kafka_cluster" "destcluster" {
 resource "confluent_private_link_attachment" "destpla" {
   cloud        = "AZURE"
   region       = local.azure_confluent_region
-  display_name = "${var.prefix}-destination-aws-platt-${random_id.env_display_id.hex}"
+  display_name = "${var.prefix}-destination-azure-platt-${random_id.env_display_id.hex}"
   environment {
     id = confluent_environment.destenv.id
   }
 }
 
 resource "confluent_private_link_attachment_connection" "destplac" {
-  display_name = "${var.prefix}-destination-aws-plattc-${random_id.env_display_id.hex}"
+  display_name = "${var.prefix}-destination-azure-plattc-${random_id.env_display_id.hex}"
   environment {
     id = confluent_environment.destenv.id
   }
