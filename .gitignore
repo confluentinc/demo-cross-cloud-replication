@@ -39,6 +39,8 @@
 **/config.txt
 **/replication_commands.txt
 **/sshkey-cl-key-*
+**/env.sh
+**/env.ps1
 
 
 # Logs and databases
