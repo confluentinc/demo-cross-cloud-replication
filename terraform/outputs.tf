@@ -29,6 +29,7 @@ cat > link-config.properties <<'EOF'
 auto.create.mirror.topics.enable=true
 consumer.offset.sync.enable=true
 auto.create.mirror.topics.filters={"topicFilters": [{"name": "*", "patternType": "LITERAL", "filterType": "INCLUDE"}]}
+metadata.max.age.ms=10000
 EOF
 confluent kafka link create cross-cloud-link \
   --cluster ${confluent_kafka_cluster.destcluster.id} \
@@ -102,6 +103,7 @@ export SOURCE_REST_ENDPOINT="${confluent_kafka_cluster.sourcecluster.rest_endpoi
 export SOURCE_SR_ENDPOINT="${data.confluent_schema_registry_cluster.sourcesr.rest_endpoint}"
 export SOURCE_KAFKA_API_KEY="${confluent_api_key.app-manager-kafka-api-key.id}"
 export SOURCE_KAFKA_API_SECRET="${confluent_api_key.app-manager-kafka-api-key.secret}"
+export SOURCE_SR_ID="${data.confluent_schema_registry_cluster.sourcesr.id}"
 export SOURCE_SR_API_KEY="${confluent_api_key.schema-registry-api-key.id}"
 export SOURCE_SR_API_SECRET="${confluent_api_key.schema-registry-api-key.secret}"
 
@@ -137,6 +139,7 @@ $env:SOURCE_REST_ENDPOINT = "${confluent_kafka_cluster.sourcecluster.rest_endpoi
 $env:SOURCE_SR_ENDPOINT = "${data.confluent_schema_registry_cluster.sourcesr.rest_endpoint}"
 $env:SOURCE_KAFKA_API_KEY = "${confluent_api_key.app-manager-kafka-api-key.id}"
 $env:SOURCE_KAFKA_API_SECRET = "${confluent_api_key.app-manager-kafka-api-key.secret}"
+$env:SOURCE_SR_ID = "${data.confluent_schema_registry_cluster.sourcesr.id}"
 $env:SOURCE_SR_API_KEY = "${confluent_api_key.schema-registry-api-key.id}"
 $env:SOURCE_SR_API_SECRET = "${confluent_api_key.schema-registry-api-key.secret}"
 

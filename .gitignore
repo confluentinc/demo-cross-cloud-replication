@@ -41,6 +41,7 @@
 **/sshkey-cl-key-*
 **/env.sh
 **/env.ps1
+**/cluster-link-retry.md
 
 
 # Logs and databases
