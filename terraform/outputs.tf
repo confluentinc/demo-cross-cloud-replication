@@ -86,6 +86,79 @@ EOT
 }
 
 
+resource "local_file" "env_sh" {
+  filename        = "./env.sh"
+  file_permission = "0600"
+  content         = <<-EOT
+#!/bin/bash
+# Cross-Cloud Replication Environment Variables
+# Usage: source env.sh
+
+# Source Cluster (AWS)
+export SOURCE_ENV_ID="${confluent_environment.sourceenv.id}"
+export SOURCE_CLUSTER_ID="${confluent_kafka_cluster.sourcecluster.id}"
+export SOURCE_BOOTSTRAP="${confluent_kafka_cluster.sourcecluster.bootstrap_endpoint}"
+export SOURCE_REST_ENDPOINT="${confluent_kafka_cluster.sourcecluster.rest_endpoint}"
+export SOURCE_SR_ENDPOINT="${data.confluent_schema_registry_cluster.sourcesr.rest_endpoint}"
+export SOURCE_KAFKA_API_KEY="${confluent_api_key.app-manager-kafka-api-key.id}"
+export SOURCE_KAFKA_API_SECRET="${confluent_api_key.app-manager-kafka-api-key.secret}"
+export SOURCE_SR_ID="${data.confluent_schema_registry_cluster.sourcesr.id}"
+export SOURCE_SR_API_KEY="${confluent_api_key.schema-registry-api-key.id}"
+export SOURCE_SR_API_SECRET="${confluent_api_key.schema-registry-api-key.secret}"
+
+# Destination Cluster (Azure)
+export DEST_ENV_ID="${confluent_environment.destenv.id}"
+export DEST_CLUSTER_ID="${confluent_kafka_cluster.destcluster.id}"
+export DEST_BOOTSTRAP="${confluent_kafka_cluster.destcluster.bootstrap_endpoint}"
+export DEST_REST_ENDPOINT="${confluent_kafka_cluster.destcluster.rest_endpoint}"
+export DEST_SR_ENDPOINT="${data.confluent_schema_registry_cluster.destsr.rest_endpoint}"
+export DEST_KAFKA_API_KEY="${confluent_api_key.dest-app-manager-kafka-api-key.id}"
+export DEST_KAFKA_API_SECRET="${confluent_api_key.dest-app-manager-kafka-api-key.secret}"
+export DEST_SR_API_KEY="${confluent_api_key.dest-schema-registry-api-key.id}"
+export DEST_SR_API_SECRET="${confluent_api_key.dest-schema-registry-api-key.secret}"
+
+# NGINX Proxy IPs
+export AWS_NGINX_IP="${aws_instance.nginx_proxy.public_ip}"
+export AZURE_NGINX_IP="${azurerm_public_ip.nginx_public_ip.ip_address}"
+  EOT
+}
+
+resource "local_file" "env_ps1" {
+  filename        = "./env.ps1"
+  file_permission = "0600"
+  content         = <<-EOT
+# Cross-Cloud Replication Environment Variables
+# Usage: . .\env.ps1
+
+# Source Cluster (AWS)
+$env:SOURCE_ENV_ID = "${confluent_environment.sourceenv.id}"
+$env:SOURCE_CLUSTER_ID = "${confluent_kafka_cluster.sourcecluster.id}"
+$env:SOURCE_BOOTSTRAP = "${confluent_kafka_cluster.sourcecluster.bootstrap_endpoint}"
+$env:SOURCE_REST_ENDPOINT = "${confluent_kafka_cluster.sourcecluster.rest_endpoint}"
+$env:SOURCE_SR_ENDPOINT = "${data.confluent_schema_registry_cluster.sourcesr.rest_endpoint}"
+$env:SOURCE_KAFKA_API_KEY = "${confluent_api_key.app-manager-kafka-api-key.id}"
+$env:SOURCE_KAFKA_API_SECRET = "${confluent_api_key.app-manager-kafka-api-key.secret}"
+$env:SOURCE_SR_ID = "${data.confluent_schema_registry_cluster.sourcesr.id}"
+$env:SOURCE_SR_API_KEY = "${confluent_api_key.schema-registry-api-key.id}"
+$env:SOURCE_SR_API_SECRET = "${confluent_api_key.schema-registry-api-key.secret}"
+
+# Destination Cluster (Azure)
+$env:DEST_ENV_ID = "${confluent_environment.destenv.id}"
+$env:DEST_CLUSTER_ID = "${confluent_kafka_cluster.destcluster.id}"
+$env:DEST_BOOTSTRAP = "${confluent_kafka_cluster.destcluster.bootstrap_endpoint}"
+$env:DEST_REST_ENDPOINT = "${confluent_kafka_cluster.destcluster.rest_endpoint}"
+$env:DEST_SR_ENDPOINT = "${data.confluent_schema_registry_cluster.destsr.rest_endpoint}"
+$env:DEST_KAFKA_API_KEY = "${confluent_api_key.dest-app-manager-kafka-api-key.id}"
+$env:DEST_KAFKA_API_SECRET = "${confluent_api_key.dest-app-manager-kafka-api-key.secret}"
+$env:DEST_SR_API_KEY = "${confluent_api_key.dest-schema-registry-api-key.id}"
+$env:DEST_SR_API_SECRET = "${confluent_api_key.dest-schema-registry-api-key.secret}"
+
+# NGINX Proxy IPs
+$env:AWS_NGINX_IP = "${aws_instance.nginx_proxy.public_ip}"
+$env:AZURE_NGINX_IP = "${azurerm_public_ip.nginx_public_ip.ip_address}"
+  EOT
+}
+
 output "resource-ids" {
   description = "All resource IDs and connection details organized by service"
   value = <<-EOT
