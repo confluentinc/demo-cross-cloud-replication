@@ -42,6 +42,7 @@
 **/env.sh
 **/env.ps1
 **/cluster-link-retry.md
+**/link-config.properties
 
 
 # Logs and databases

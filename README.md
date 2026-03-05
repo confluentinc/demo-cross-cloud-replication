@@ -209,7 +209,6 @@ Configure Cluster Linking to replicate data from the source (AWS) cluster to the
    auto.create.mirror.topics.enable=true
    consumer.offset.sync.enable=true
    auto.create.mirror.topics.filters={"topicFilters": [{"name": "*", "patternType": "LITERAL", "filterType": "INCLUDE"}]}
-   metadata.max.age.ms=10000
    EOF
 
    confluent kafka link create cross-cloud-link \
@@ -230,7 +229,6 @@ Configure Cluster Linking to replicate data from the source (AWS) cluster to the
    auto.create.mirror.topics.enable=true
    consumer.offset.sync.enable=true
    auto.create.mirror.topics.filters={"topicFilters": [{"name": "*", "patternType": "LITERAL", "filterType": "INCLUDE"}]}
-   metadata.max.age.ms=10000
    "@ | Out-File -Encoding UTF8 link-config.properties
 
    confluent kafka link create cross-cloud-link `

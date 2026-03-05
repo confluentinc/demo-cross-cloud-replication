@@ -29,7 +29,6 @@ cat > link-config.properties <<'EOF'
 auto.create.mirror.topics.enable=true
 consumer.offset.sync.enable=true
 auto.create.mirror.topics.filters={"topicFilters": [{"name": "*", "patternType": "LITERAL", "filterType": "INCLUDE"}]}
-metadata.max.age.ms=10000
 EOF
 confluent kafka link create cross-cloud-link \
   --cluster ${confluent_kafka_cluster.destcluster.id} \
